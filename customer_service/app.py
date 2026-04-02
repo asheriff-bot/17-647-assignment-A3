@@ -48,19 +48,44 @@ def get_db():
 
 def _kafka_topic() -> str:
     andrew_id = (os.environ.get("ANDREW_ID") or "").strip()
-    return f"{andrew_id}.customer.evt" if andrew_id else "customer.evt"
+    if not andrew_id:
+        raise ValueError("ANDREW_ID is required for topic <ANDREW_ID>.customer.evt")
+    return f"{andrew_id}.customer.evt"
+
+
+def _kafka_security_kwargs() -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    proto = (os.environ.get("KAFKA_SECURITY_PROTOCOL") or "PLAINTEXT").strip().upper()
+    if proto:
+        out["security_protocol"] = proto
+    ca = (os.environ.get("KAFKA_SSL_CAFILE") or "").strip()
+    if ca:
+        out["ssl_cafile"] = ca
+    mech = (os.environ.get("KAFKA_SASL_MECHANISM") or "").strip()
+    user = (os.environ.get("KAFKA_SASL_USERNAME") or "").strip()
+    pwd = (os.environ.get("KAFKA_SASL_PASSWORD") or "").strip()
+    if mech and user:
+        out["sasl_mechanism"] = mech
+        out["sasl_plain_username"] = user
+        out["sasl_plain_password"] = pwd
+    return out
 
 
 def _publish_customer_registered(evt: dict) -> None:
     brokers = (os.environ.get("KAFKA_BROKERS") or "").strip()
     if not brokers:
         return
+    try:
+        topic = _kafka_topic()
+    except ValueError:
+        return
     producer = KafkaProducer(
         bootstrap_servers=[b.strip() for b in brokers.split(",") if b.strip()],
         value_serializer=lambda v: json.dumps(v).encode("utf-8"),
+        **_kafka_security_kwargs(),
     )
     try:
-        producer.send(_kafka_topic(), evt).get(timeout=5)
+        producer.send(topic, evt).get(timeout=5)
         producer.flush(timeout=5)
     finally:
         producer.close(timeout=5)
