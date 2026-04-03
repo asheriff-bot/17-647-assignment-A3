@@ -13,6 +13,15 @@ spec:
       labels:
         app: customer-service
     spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: customer-service
+                topologyKey: kubernetes.io/hostname
       containers:
         - name: customer-service
           image: YOUR_REGISTRY/customer-service:latest

@@ -13,6 +13,15 @@ spec:
       labels:
         app: web-bff
     spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: web-bff
+                topologyKey: kubernetes.io/hostname
       containers:
         - name: web-bff
           image: YOUR_REGISTRY/web-bff:latest
