@@ -34,10 +34,12 @@ spec:
               value: YOUR_DB_PASSWORD
             - name: DB_NAME
               value: books_db
+            # Set URL from Canvas: testing http://52.73.13.84 | Gradescope http://100.51.187.149
             - name: RECOMMENDATION_SERVICE_URL
               value: YOUR_RECOMMENDATION_SERVICE_URL
+            # Course engine OpenAPI: GET /recommended-titles/isbn/{isbn}
             - name: RECOMMENDATION_PATH_TEMPLATE
-              value: /api/recommendations/{isbn}
+              value: /recommended-titles/isbn/{isbn}
             - name: RELATED_BOOKS_TIMEOUT_SECONDS
               value: "3"
             - name: RELATED_BOOKS_CIRCUIT_OPEN_SECONDS

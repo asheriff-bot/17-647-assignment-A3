@@ -313,7 +313,6 @@ Resources:
           IpProtocol: "-1"
           CidrIp: 0.0.0.0/0
 
-
   #
   # EKS cluster
   #
@@ -347,6 +346,11 @@ Resources:
         - Key: Name
           Value: !Sub "${VpcName}-BookstoreEKSCluster"
 
+  # AWS Academy / Learner Lab (voclabs) does not allow students to create IAM roles or instance profiles
+  # (iam:CreateRole / iam:CreateInstanceProfile). A bastion EC2 with its own role therefore cannot be created via CFN here.
+  # Use AWS CloudShell or your laptop: aws eks update-kubeconfig --region ... --name <cluster> && kubectl ...
+  # For mysql to Aurora from inside the VPC, use a lab-approved method or temporarily widen RDS SG (not recommended for prod).
+
   # Install the Amazon CloudWatch Observability EKS add-on (our goal is to see application logs)
   # Reference: https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-eks-addon.html
   CloudObservabilityAddon:
@@ -378,7 +382,6 @@ Resources:
         - t2.medium
         - t3.medium
         - t2.large
-
 
   # The console/shell user needs to be granted EKS cluster access with policy AmazonEKSClusterAdminPolicy.
   # The commented out resource below was supposed to grant that permission, but it didn't work on AWS Academy. As it stands, you
@@ -499,4 +502,12 @@ Resources:
 #    Properties:
 #      SubnetId: !Ref DBSubnet2
 #      RouteTableId: !Ref PrivateRouteTable02
+
+Outputs:
+  EksClusterName:
+    Description: Name passed to kubectl / aws eks update-kubeconfig (from CloudShell or your machine).
+    Value: !Sub "${VpcName}-BookstoreEKSCluster"
+  KubectlConfigureHint:
+    Description: Learner Lab cannot create a bastion IAM role; run kubectl from CloudShell or local AWS CLI.
+    Value: !Sub "aws eks update-kubeconfig --region ${AWS::Region} --name ${VpcName}-BookstoreEKSCluster && kubectl get nodes"
 

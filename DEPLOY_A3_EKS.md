@@ -17,7 +17,7 @@ Required fields:
 - `RDS_ENDPOINT`, `DB_USER`, `DB_PASSWORD`
 - `KAFKA_BROKERS`
 - `ANDREW_ID`, `EMAIL_ADDRESS`
-- `RECOMMENDATION_SERVICE_URL`, `RECOMMENDATION_PATH_TEMPLATE`
+- `RECOMMENDATION_SERVICE_URL`, `RECOMMENDATION_PATH_TEMPLATE` (see Canvas; typical values: testing `http://52.73.13.84`, Gradescope `http://100.51.187.149`, path `/recommended-titles/isbn/{isbn}`)
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_STARTTLS`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_SENDER_EMAIL`
 - `AWS_REGION`, `EKS_CLUSTER_NAME`
 
@@ -35,7 +35,8 @@ aws rds describe-db-clusters \
 aws eks list-clusters --region us-east-1 --output table
 
 # Kafka brokers: from your Canvas announcement (paste into KAFKA_BROKERS)
-# Recommendation URL: from your Canvas announcement (paste into RECOMMENDATION_SERVICE_URL)
+# Recommendation URL: testing http://52.73.13.84 | Gradescope http://100.51.187.149
+# Path template: /recommended-titles/isbn/{isbn}
 ```
 
 If you prefer CloudFormation queries, use:

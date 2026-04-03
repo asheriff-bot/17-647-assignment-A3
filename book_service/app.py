@@ -119,6 +119,37 @@ def _parse_related_books_body(payload: Any) -> list:
     return []
 
 
+def _to_assignment_related_book_row(item: Any) -> dict | None:
+    """
+    CMU course recommendation API returns RecommendationDto: isbn, title, authors, publisher.
+    A3 spec response uses ISBN, title, Author.
+    """
+    if not isinstance(item, dict):
+        return None
+    isbn_v = item.get("ISBN") if item.get("ISBN") is not None else item.get("isbn")
+    title_v = item.get("title")
+    author_v = item.get("Author") if item.get("Author") is not None else item.get("authors")
+    if isbn_v is None and title_v is None and author_v is None:
+        return None
+    out: dict = {}
+    if isbn_v is not None:
+        out["ISBN"] = format_isbn_for_json(str(isbn_v).strip())
+    if title_v is not None:
+        out["title"] = title_v
+    if author_v is not None:
+        out["Author"] = author_v
+    return out if out else None
+
+
+def _normalize_related_books_response(raw_list: list) -> list:
+    out: list = []
+    for it in raw_list:
+        row = _to_assignment_related_book_row(it)
+        if row:
+            out.append(row)
+    return out
+
+
 def _recommendation_urls(isbn: str) -> list[str]:
     if not RECOMMENDATION_BASE_URL:
         return []
@@ -127,7 +158,9 @@ def _recommendation_urls(isbn: str) -> list[str]:
     )
     if path_template:
         return [f"{RECOMMENDATION_BASE_URL}{path_template.format(isbn=isbn)}"]
+    # Default order: CMU course engine OpenAPI path first, then legacy fallbacks.
     return [
+        f"{RECOMMENDATION_BASE_URL}/recommended-titles/isbn/{isbn}",
         f"{RECOMMENDATION_BASE_URL}/books/{isbn}/related-books",
         f"{RECOMMENDATION_BASE_URL}/recommendations/{isbn}",
         f"{RECOMMENDATION_BASE_URL}/related-books/{isbn}",
@@ -780,6 +813,9 @@ def related_books(isbn):
         status, books = _fetch_related_books_external(isbn_canonical)
         _set_circuit_closed()
         if status == 204 or not books:
+            return Response(status=204)
+        books = _normalize_related_books_response(books)
+        if not books:
             return Response(status=204)
         return jsonify(books), 200
     except requests.Timeout:

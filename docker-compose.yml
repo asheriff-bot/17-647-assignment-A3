@@ -40,6 +40,9 @@ services:
       db:
         condition: service_healthy
 
+  # For live course API instead of mock: set book_service RECOMMENDATION_SERVICE_URL to
+  # http://52.73.13.84 (testing) or http://100.51.187.149 (Gradescope) and path
+  # RECOMMENDATION_PATH_TEMPLATE=/recommended-titles/isbn/{isbn}
   book_service:
     build:
       context: ./book_service

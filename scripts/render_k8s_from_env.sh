@@ -53,7 +53,7 @@ for f in "$ROOT_DIR"/k8s/*.yaml; do
     -e "s|YOUR_DB_PASSWORD|${DB_PASSWORD}|g" \
     -e "s|YOUR_KAFKA_BROKERS|${KAFKA_BROKERS}|g" \
     -e "s|YOUR_RECOMMENDATION_SERVICE_URL|${RECOMMENDATION_SERVICE_URL}|g" \
-    -e "s|/api/recommendations/{isbn}|${RECOMMENDATION_PATH_TEMPLATE}|g" \
+    -e "s|/recommended-titles/isbn/{isbn}|${RECOMMENDATION_PATH_TEMPLATE}|g" \
     -e "s|your_andrew_id|${ANDREW_ID}|g" \
     -e "s|your_email@gmail.com|${EMAIL_ADDRESS}|g" \
     -e "s|YOUR_SMTP_HOST|${SMTP_HOST}|g" \
