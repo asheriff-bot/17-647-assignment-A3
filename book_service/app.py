@@ -168,8 +168,11 @@ def _recommendation_urls(isbn: str) -> list[str]:
 
 
 def _fetch_related_books_external(isbn: str) -> tuple[int, list]:
+    urls = _recommendation_urls(isbn)
+    if not urls:
+        raise requests.Timeout()
     last_status = 204
-    for url in _recommendation_urls(isbn):
+    for url in urls:
         r = requests.get(url, timeout=RELATED_BOOKS_TIMEOUT_SECONDS)
         if r.status_code == 204:
             return 204, []
@@ -801,6 +804,8 @@ def related_books(isbn):
     isbn_canonical = normalize_isbn_value(str(isbn).strip())
     if not isbn_canonical:
         return jsonify({}), 400
+    if not RECOMMENDATION_BASE_URL:
+        return jsonify({}), 503
 
     now_ts = int(time.time())
     state = _load_circuit_state()
