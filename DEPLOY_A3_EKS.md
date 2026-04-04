@@ -61,6 +61,35 @@ If `mysql` is not installed: `sudo yum install -y mariadb101-client` (Amazon Lin
 
 Until this succeeds, Gradescope tests that add books or customers will fail with **500** and `Unknown database 'books_db'` / `'customers_db'`.
 
+### Aurora writer vs reader (MySQL **1836** / “Running in read-only mode”)
+
+`POST /books` and `POST /customers` require a **write** connection. If `DB_HOST` points at the **reader** endpoint, MySQL returns **`(1836, 'Running in read-only mode')`** and the API returns **500**.
+
+- **Writer** hostname looks like: `bookstore-db-dev.cluster-xxxx.region.rds.amazonaws.com` (note **`cluster-`**, not **`cluster-ro-`**).
+- **Reader (read-only)** hostname looks like: `bookstore-db-dev.cluster-ro-xxxx.region.rds.amazonaws.com` — **never** put this in `RDS_ENDPOINT`.
+
+Confirm in AWS (first line = writer — use this as `RDS_ENDPOINT`; second = reader — do not use):
+
+```bash
+aws rds describe-db-clusters --region us-east-1 --db-cluster-identifier bookstore-db-dev \
+  --query 'DBClusters[0].[Endpoint,ReaderEndpoint]' --output text
+```
+
+If unsure, use the **writer instance** endpoint (the instance with `IsClusterWriter` **true**):
+
+```bash
+aws rds describe-db-instances --region us-east-1 \
+  --query "DBInstances[?DBClusterIdentifier=='bookstore-db-dev'].{id:DBInstanceIdentifier,writer:IsClusterWriter,host:Endpoint.Address}" \
+  --output table
+```
+
+After fixing `k8s/deploy.env`, re-run `./scripts/render_k8s_from_env.sh`, re-apply `k8s/rendered/customer-service.yaml` and `k8s/rendered/book-service.yaml`, and verify what pods actually use:
+
+```bash
+kubectl -n bookstore-ns exec deploy/book-service -- printenv DB_HOST
+kubectl -n bookstore-ns exec deploy/customer-service -- printenv DB_HOST
+```
+
 ## 3) Build and push all images
 
 From repo root:
