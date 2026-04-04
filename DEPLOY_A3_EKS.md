@@ -45,6 +45,22 @@ If you prefer CloudFormation queries, use:
 aws cloudformation describe-stacks --stack-name <your-stack-name> --region us-east-1
 ```
 
+## 2.5) Initialize Aurora databases (required once)
+
+Pods use **`customers_db`** and **`books_db`** (`DB_NAME` in the rendered manifests). A fresh Aurora cluster has neither, which surfaces as MySQL **`1049 Unknown database`** and **HTTP 500** on `POST /customers` and `POST /books`.
+
+From a host that can reach the **Aurora writer** (same VPC bastion, or tunnel), run the repo script **once** (idempotent `CREATE DATABASE IF NOT EXISTS`):
+
+```bash
+cd <path-to-assign_3_aws-repo-root>
+source k8s/deploy.env
+mysql -h "$RDS_ENDPOINT" -u "$DB_USER" -p"$DB_PASSWORD" < scripts/init_db.sql
+```
+
+If `mysql` is not installed: `sudo yum install -y mariadb101-client` (Amazon Linux 2) or use the RDS query editor / any MySQL client with the same host, user, password, and SQL file.
+
+Until this succeeds, Gradescope tests that add books or customers will fail with **500** and `Unknown database 'books_db'` / `'customers_db'`.
+
 ## 3) Build and push all images
 
 From repo root:

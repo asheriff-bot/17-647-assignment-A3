@@ -40,7 +40,7 @@ spec:
             - name: OTEL_SDK_DISABLED
               value: "true"
             - name: DB_HOST
-              value: bookstore-db-dev-instance1.cgqb4yinmv3k.us-east-1.rds.amazonaws.com
+              value: bookstore-db-dev.cluster-cgqb4yinmv3k.us-east-1.rds.amazonaws.com
             - name: DB_USER
               value: admin123
             - name: DB_PASSWORD
