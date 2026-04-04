@@ -9,6 +9,8 @@ import os
 import re
 import json
 import time
+import urllib.error
+import urllib.request
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Optional, Tuple
@@ -167,21 +169,45 @@ def _recommendation_urls(isbn: str) -> list[str]:
     ]
 
 
+def _recommendation_http_get(url: str) -> tuple[int, bytes]:
+    """
+    Use stdlib urllib for the course recommendation engine. EKS CloudWatch OTel auto-instrumentation
+    wraps requests/urllib3 and can exceed RELATED_BOOKS_TIMEOUT_SECONDS; urllib is not hooked the same way.
+    """
+    req = urllib.request.Request(url, headers={"Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(
+            req, timeout=float(RELATED_BOOKS_TIMEOUT_SECONDS)
+        ) as resp:
+            return resp.getcode(), resp.read()
+    except urllib.error.HTTPError as e:
+        try:
+            body = e.read()
+        except Exception:
+            body = b""
+        return e.code, body
+    except TimeoutError:
+        raise requests.Timeout()
+    except urllib.error.URLError:
+        raise requests.Timeout()
+
+
 def _fetch_related_books_external(isbn: str) -> tuple[int, list]:
     urls = _recommendation_urls(isbn)
     if not urls:
         raise requests.Timeout()
     last_status = 204
     for url in urls:
-        r = requests.get(url, timeout=RELATED_BOOKS_TIMEOUT_SECONDS)
-        if r.status_code == 204:
+        status, raw = _recommendation_http_get(url)
+        if status == 204:
             return 204, []
-        if r.status_code == 200:
+        if status == 200:
             try:
-                return 200, _parse_related_books_body(r.json())
+                payload = json.loads(raw.decode("utf-8"))
+                return 200, _parse_related_books_body(payload)
             except Exception:
                 return 200, []
-        last_status = r.status_code
+        last_status = status
     if last_status == 404:
         return 204, []
     raise requests.HTTPError(f"Unexpected status from recommendation service: {last_status}")
