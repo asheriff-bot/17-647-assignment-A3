@@ -45,11 +45,16 @@ kind: Service
 metadata:
   name: mobile-bff
   namespace: bookstore-ns
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: nlb
+    service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
 spec:
   type: LoadBalancer
+  externalTrafficPolicy: Cluster
   selector:
     app: mobile-bff
   ports:
-    - protocol: TCP
+    - name: http
+      protocol: TCP
       port: 80
       targetPort: 80
