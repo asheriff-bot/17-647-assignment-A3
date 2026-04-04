@@ -24,7 +24,7 @@ spec:
                 topologyKey: kubernetes.io/hostname
       containers:
         - name: web-bff
-          image: akramdocke/web-bff:a3-latest
+          image: docker.io/akramdocke/web-bff:a3-latest
           imagePullPolicy: Always
           ports:
             - containerPort: 80

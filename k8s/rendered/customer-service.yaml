@@ -24,13 +24,13 @@ spec:
                 topologyKey: kubernetes.io/hostname
       containers:
         - name: customer-service
-          image: akramdocke/customer-service:a3-latest
+          image: docker.io/akramdocke/customer-service:a3-latest
           imagePullPolicy: Always
           ports:
             - containerPort: 3000
           env:
             - name: DB_HOST
-              value: YOUR_RDS_ENDPOINT
+              value: bookstore-db-dev-instance1.cgqb4yinmv3k.us-east-1.rds.amazonaws.com
             - name: DB_USER
               value: admin123
             - name: DB_PASSWORD

@@ -27,7 +27,7 @@ spec:
           emptyDir: {}
       containers:
         - name: book-service
-          image: akramdocke/book-service:a3-latest
+          image: docker.io/akramdocke/book-service:a3-latest
           imagePullPolicy: Always
           ports:
             - containerPort: 3000
@@ -40,7 +40,7 @@ spec:
             - name: OTEL_SDK_DISABLED
               value: "true"
             - name: DB_HOST
-              value: YOUR_RDS_ENDPOINT
+              value: bookstore-db-dev-instance1.cgqb4yinmv3k.us-east-1.rds.amazonaws.com
             - name: DB_USER
               value: admin123
             - name: DB_PASSWORD

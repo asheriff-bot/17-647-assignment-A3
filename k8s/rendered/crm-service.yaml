@@ -24,7 +24,7 @@ spec:
                 topologyKey: kubernetes.io/hostname
       containers:
         - name: crm-service
-          image: akramdocke/crm-service:a3-latest
+          image: docker.io/akramdocke/crm-service:a3-latest
           imagePullPolicy: Always
           env:
             - name: KAFKA_BROKERS
@@ -40,6 +40,6 @@ spec:
             - name: SMTP_USERNAME
               value: asheriff@andrew.cmu.edu
             - name: SMTP_PASSWORD
-              value: app_password
+              value: REPLACE_WITH_GMAIL_APP_PASSWORD
             - name: SMTP_SENDER_EMAIL
               value: asheriff@andrew.cmu.edu

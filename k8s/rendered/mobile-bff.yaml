@@ -24,7 +24,7 @@ spec:
                 topologyKey: kubernetes.io/hostname
       containers:
         - name: mobile-bff
-          image: akramdocke/mobile-bff:a3-latest
+          image: docker.io/akramdocke/mobile-bff:a3-latest
           imagePullPolicy: Always
           ports:
             - containerPort: 80
