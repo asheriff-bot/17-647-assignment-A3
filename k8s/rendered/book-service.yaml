@@ -35,12 +35,16 @@ spec:
             - name: circuit-state
               mountPath: /circuit
           env:
+            # CloudWatch Observability EKS add-on injects Python OTel; it wraps urllib and can delay or hang
+            # outbound calls to RECOMMENDATION_SERVICE_URL (RELATED_BOOKS_TIMEOUT_SECONDS → 503).
+            - name: OTEL_SDK_DISABLED
+              value: "true"
             - name: DB_HOST
               value: YOUR_RDS_ENDPOINT
             - name: DB_USER
-              value: YOUR_DB_USER
+              value: admin123
             - name: DB_PASSWORD
-              value: YOUR_DB_PASSWORD
+              value: admin123
             - name: DB_NAME
               value: books_db
             # Set URL from Canvas: testing http://52.73.13.84 | Gradescope http://100.51.187.149
