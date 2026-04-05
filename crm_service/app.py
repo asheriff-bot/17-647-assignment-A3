@@ -73,7 +73,7 @@ def _consumer() -> KafkaConsumer:
         bootstrap_servers=[b.strip() for b in brokers.split(",") if b.strip()],
         auto_offset_reset="earliest",
         group_id=(os.environ.get("CRM_CONSUMER_GROUP") or "crm-service"),
-        enable_auto_commit=True,
+        enable_auto_commit=False,
         value_deserializer=lambda m: _deserialize_event(m),
         **extra,
     )
@@ -90,10 +90,19 @@ def _activation_email_body(customer_name: str, andrew_id: str) -> str:
     )
 
 
+def _recipient_from_event(customer: dict[str, Any]) -> str:
+    """To-address for activation mail (customer email from Kafka JSON)."""
+    for key in ("userId", "user_id", "email", "Email"):
+        v = customer.get(key)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return ""
+
+
 def _send_email(customer: dict[str, Any]) -> None:
-    to_addr = (customer.get("userId") or "").strip()
+    to_addr = _recipient_from_event(customer)
     if not to_addr:
-        LOG.warning("Skip email: missing userId in event")
+        LOG.warning("Skip email: no recipient (userId/email) in event keys=%s", list(customer.keys()))
         return
     customer_name = (customer.get("name") or "Customer").strip() or "Customer"
     andrew_id = (os.environ.get("ANDREW_ID") or "").strip()
@@ -113,20 +122,27 @@ def _send_email(customer: dict[str, Any]) -> None:
     msg["Subject"] = "Activate your book store account"
     msg["From"] = sender
     msg["To"] = to_addr
-    msg.set_content(_activation_email_body(customer_name, andrew_id))
+    msg.set_content(_activation_email_body(customer_name, andrew_id), charset="utf-8")
 
     port = int(os.environ.get("SMTP_PORT", "587"))
     username = (os.environ.get("SMTP_USERNAME") or "").strip()
     password = (os.environ.get("SMTP_PASSWORD") or "").strip()
     use_tls = (os.environ.get("SMTP_STARTTLS", "true").strip().lower() in ("1", "true", "yes"))
 
-    with smtplib.SMTP(host=host, port=port, timeout=30) as server:
+    if "gmail" in host.lower() and username and sender.lower() != username.lower():
+        LOG.warning(
+            "Gmail usually requires From (%s) to match SMTP_USERNAME (%s); delivery may fail.",
+            sender,
+            username,
+        )
+
+    with smtplib.SMTP(host=host, port=port, timeout=60) as server:
         if use_tls:
             server.starttls()
         if username:
             server.login(username, password)
         server.send_message(msg)
-    LOG.info("Sent activation email to %s", to_addr)
+    LOG.info("Sent activation email to %s from %s", to_addr, sender)
 
 
 def main() -> None:
@@ -144,8 +160,10 @@ def main() -> None:
                 payload = message.value if isinstance(message.value, dict) else {}
                 try:
                     _send_email(payload)
+                    consumer.commit()
                 except Exception as ex:
-                    LOG.exception("Email send failed: %s", ex)
+                    LOG.exception("Email send failed (offset not committed; will retry): %s", ex)
+                    time.sleep(2)
         except Exception as ex:
             LOG.exception("Kafka consumer error, retry in %ss: %s", backoff, ex)
             time.sleep(backoff)
