@@ -92,17 +92,17 @@ kubectl -n bookstore-ns exec deploy/customer-service -- printenv DB_HOST
 
 ## 3) Build and push all images
 
-From repo root:
+From repo root, use the **A3** script so image **repository names** match `k8s/*.yaml` (`customer-service`, `book-service`, `crm-service`, `web-bff`, `mobile-bff`). Do **not** use `build-push-dockerhub-amd64.sh` for A3 EKS — that script builds the older **`bookstore-*`** image names and **omits `crm-service`**.
 
 ```bash
 export DH=<your_registry_user_or_prefix>
 export TAG=<image_tag>
-./scripts/build-push-dockerhub-amd64.sh
+./scripts/build-push-dockerhub-a3.sh
 ```
 
 Then set in `k8s/deploy.env`:
-- `IMAGE_REGISTRY=<same registry prefix>`
-- `IMAGE_TAG=<same tag>`
+- `IMAGE_REGISTRY=<same as DH>` (add `docker.io/` prefix if you use it consistently in renders)
+- `IMAGE_TAG=<same as TAG>`
 
 ## 4) Render Kubernetes manifests with your values
 
