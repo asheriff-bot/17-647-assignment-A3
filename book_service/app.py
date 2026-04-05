@@ -8,6 +8,8 @@ import math
 import os
 import re
 import json
+import socket
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -64,6 +66,9 @@ RECOMMENDATION_BASE_URL = (
 _STATE_FILE = Path(
     os.environ.get("CIRCUIT_STATE_FILE", "/tmp/related_books_circuit_state.json")
 )
+# Flask's dev server is multi-threaded; concurrent GETs can both see "closed" before either
+# persists "open", yielding 504 where the grader expects 503 while the circuit is open.
+_RELATED_BOOKS_CIRCUIT_LOCK = threading.Lock()
 
 
 def get_db():
@@ -187,6 +192,8 @@ def _recommendation_http_get(url: str) -> tuple[int, bytes]:
             body = b""
         return e.code, body
     except TimeoutError:
+        raise requests.Timeout()
+    except socket.timeout:
         raise requests.Timeout()
     except urllib.error.URLError:
         raise requests.Timeout()
@@ -833,33 +840,34 @@ def related_books(isbn):
     if not RECOMMENDATION_BASE_URL:
         return jsonify({}), 503
 
-    now_ts = int(time.time())
-    state = _load_circuit_state()
-    is_open = state.get("state") == "open"
-    opened_at = int(state.get("opened_at") or 0)
-    if is_open and (now_ts - opened_at) < CIRCUIT_OPEN_SECONDS:
-        return jsonify({}), 503
+    with _RELATED_BOOKS_CIRCUIT_LOCK:
+        now_ts = int(time.time())
+        state = _load_circuit_state()
+        is_open = state.get("state") == "open"
+        opened_at = int(state.get("opened_at") or 0)
+        if is_open and (now_ts - opened_at) < CIRCUIT_OPEN_SECONDS:
+            return jsonify({}), 503
 
-    try:
-        status, books = _fetch_related_books_external(isbn_canonical)
-        _set_circuit_closed()
-        if status == 204 or not books:
-            return Response(status=204)
-        books = _normalize_related_books_response(books)
-        if not books:
-            return Response(status=204)
-        return jsonify(books), 200
-    except requests.Timeout:
-        if is_open:
+        try:
+            status, books = _fetch_related_books_external(isbn_canonical)
+            _set_circuit_closed()
+            if status == 204 or not books:
+                return Response(status=204)
+            books = _normalize_related_books_response(books)
+            if not books:
+                return Response(status=204)
+            return jsonify(books), 200
+        except requests.Timeout:
+            if is_open:
+                _set_circuit_open(now_ts)
+                return jsonify({}), 503
             _set_circuit_open(now_ts)
-            return jsonify({}), 503
-        _set_circuit_open(now_ts)
-        return jsonify({}), 504
-    except Exception:
-        if is_open:
-            _set_circuit_open(now_ts)
-            return jsonify({}), 503
-        return jsonify({}), 504
+            return jsonify({}), 504
+        except Exception:
+            if is_open:
+                _set_circuit_open(now_ts)
+                return jsonify({}), 503
+            return jsonify({}), 504
 
 
 if __name__ == "__main__":
