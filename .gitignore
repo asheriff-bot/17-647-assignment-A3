@@ -222,3 +222,7 @@ k8s/rendered/
 .bash_logout
 .bash_profile
 .viminfo
+
+# OS / submission artifacts (keep repo clean for zip-from-folder)
+.DS_Store
+*.zip

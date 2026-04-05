@@ -19,6 +19,13 @@ Python microservices for the bookstore e-commerce system, deployable on AWS with
 
 Do **not** duplicate manifests at the repo root; use **`k8s/`** only.
 
+## Gradescope submission
+
+- **Contents:** Submit a zip or git repo with **implementation artifacts only** (source, Dockerfiles, `docker-compose.yml` if you use it, `k8s/*.yaml`, `scripts/`, `shared/`, `url.txt`). Omit caches and local junk: `node_modules`, `__pycache__/`, virtualenvs (`.venv`, `venv/`), `k8s/rendered/` (generated), `k8s/deploy.env` (secrets), `.kube/`, shell history, editor/OS cruft.
+- **Five microservices:** Each service lives in its **own** subdirectory: `book_service/`, `customer_service/`, `crm_service/`, `web_bff/`, `mobile_bff/`. The `shared/` package is not a separate microservice; `k8s/backend-router.yaml` is the cluster ingress (nginx), not a sixth Python service.
+- **Kubernetes:** Include the **template** YAML under `k8s/` (e.g. `namespace.yaml`, `*-service.yaml`, `web-bff.yaml`, `mobile-bff.yaml`, `backend-router.yaml`). Gradescope needs these alongside the code; do not submit only rendered manifests if your workflow generates `k8s/rendered/` locally.
+- **`url.txt`:** Exactly **four** lines, in order: (1) web BFF base URL, (2) mobile BFF base URL, (3) Andrew ID, (4) the **same email** the CRM service uses as the sender (`SMTP_SENDER_EMAIL`). No extra blank lines. See `DEPLOY_A3_EKS.md` §8 for how to read the two LoadBalancer URLs from the cluster.
+
 ## Architecture
 
 | Service              | Port | EC2 Instances        |

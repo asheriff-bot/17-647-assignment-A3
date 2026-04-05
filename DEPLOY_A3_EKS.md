@@ -158,11 +158,11 @@ echo "$WEB_URL"
 echo "$MOBILE_URL"
 ```
 
-Set `url.txt` exactly:
+Set `url.txt` to **exactly four lines** (no leading or trailing blank lines):
 1. web BFF URL
 2. mobile BFF URL
 3. Andrew ID
-4. email address used by CRM sender
+4. email address used by CRM sender (`SMTP_SENDER_EMAIL`, same as in `k8s/deploy.env` / the CRM Deployment env)
 
 **CRM / Gradescope email checks:** Use a real **Gmail App Password** in `SMTP_PASSWORD` (not your normal password). For Gmail, set **`SMTP_USERNAME`** and **`SMTP_SENDER_EMAIL`** to the **same** mailbox you authenticate. The activation email is sent **To** the customer’s **`userId`** from the Kafka event (the address the autograder uses for `POST /customers`). If email tests fail but Kafka passes, check `kubectl -n bookstore-ns logs deploy/crm-service` for SMTP errors and confirm the cluster allows **egress TCP 587** (or 465 if you use SSL).
 
