@@ -2,6 +2,23 @@
 
 Python microservices for the bookstore e-commerce system, deployable on AWS with the provided CloudFormation template.
 
+## Repository layout (A3 EKS)
+
+| Path | Purpose |
+|------|---------|
+| `customer_service/`, `book_service/`, `crm_service/` | Backend service code + Dockerfiles |
+| `web_bff/`, `mobile_bff/` | BFF code + Dockerfiles (build context includes `shared/`) |
+| `shared/` | JWT and BFF helpers used by both BFFs |
+| `k8s/*.yaml` | Kubernetes **templates** (`YOUR_*` placeholders) |
+| `k8s/deploy.env.example` | Copy to **`k8s/deploy.env`** (gitignored) and fill for EKS |
+| `k8s/rendered/` | **Generated** by `./scripts/render_k8s_from_env.sh` (gitignored); apply these to the cluster |
+| `scripts/` | `render_k8s_from_env.sh`, `build-push-dockerhub-a3.sh`, SQL helpers |
+| `DEPLOY_A3_EKS.md` | End-to-end EKS deploy and Gradescope checklist |
+| `CF-A3-cmu.yml` | Optional course CloudFormation |
+| `url.txt` | Submission file: web BFF URL, mobile BFF URL, Andrew ID, CRM sender email |
+
+Do **not** duplicate manifests at the repo root; use **`k8s/`** only.
+
 ## Architecture
 
 | Service              | Port | EC2 Instances        |

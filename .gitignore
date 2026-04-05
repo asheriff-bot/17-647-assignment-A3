@@ -210,3 +210,15 @@ __marimo__/
 *.pem
 k8s/deploy.env
 k8s/rendered/
+# Do not commit a second copy of rendered manifests at repo root
+/rendered/
+
+# Local machine / bastion noise (never commit)
+.kube/
+.ssh/
+.aws/
+.bash_history
+.bashrc
+.bash_logout
+.bash_profile
+.viminfo

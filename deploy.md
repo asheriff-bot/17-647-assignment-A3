@@ -1,5 +1,7 @@
 # A2 Deployment Guide: Build and Deploy on AWS
 
+For **A3 / EKS**, use **`DEPLOY_A3_EKS.md`** and **`k8s/`** manifests (render with `./scripts/render_k8s_from_env.sh`).
+
 This document gives a **logical sequence of steps** to build the four A2 Docker images and deploy them on AWS using the CloudFormation stack (CF-A2-cmu.yml). The **Dockerfiles** and **docker-compose.yml** are aligned with the A2 API (ports 80 for BFFs, 3000 for backend; `/status`, `/customers*`, `/books*`).
 
 ---
