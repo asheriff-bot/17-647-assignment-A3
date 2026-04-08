@@ -1,203 +1,126 @@
-# Assignment A2: BFF, JWT & Multiple Microservices
+# Assignment A3: Bookstore microservices on EKS
 
-Python microservices for the bookstore e-commerce system, deployable on AWS with the provided CloudFormation template.
+Five Python microservices (three backends, two BFFs), a shared library, and Kubernetes manifests for deployment on AWS EKS. Optional infrastructure is defined in `CF-A3-cmu.yml`.
 
-## Repository layout (A3 EKS)
+## Repository layout
 
 | Path | Purpose |
 |------|---------|
-| `customer_service/`, `book_service/`, `crm_service/` | Backend service code + Dockerfiles |
-| `web_bff/`, `mobile_bff/` | BFF code + Dockerfiles (build context includes `shared/`) |
+| `book_service/`, `customer_service/`, `crm_service/` | Backend services (Flask) + Dockerfiles |
+| `web_bff/`, `mobile_bff/` | BFFs + Dockerfiles (build from repo root so `shared/` is in context) |
 | `shared/` | JWT and BFF helpers used by both BFFs |
-| `k8s/*.yaml` | Kubernetes **templates** (`YOUR_*` placeholders) |
-| `k8s/deploy.env.example` | Copy to **`k8s/deploy.env`** (gitignored) and fill for EKS |
-| `k8s/rendered/` | **Generated** by `./scripts/render_k8s_from_env.sh` (gitignored); apply these to the cluster |
-| `scripts/` | `render_k8s_from_env.sh`, `build-push-dockerhub-a3.sh`, SQL helpers |
-| `DEPLOY_A3_EKS.md` | End-to-end EKS deploy and Gradescope checklist |
-| `CF-A3-cmu.yml` | Optional course CloudFormation |
-| `url.txt` | Submission file: web BFF URL, mobile BFF URL, Andrew ID, CRM sender email |
+| `k8s/*.yaml` | Kubernetes templates (`YOUR_*` placeholders); render with `scripts/render_k8s_from_env.sh` |
+| `k8s/deploy.env.example` | Copy to `k8s/deploy.env` (gitignored) and fill for your cluster |
+| `k8s/rendered/` | Generated manifests (gitignored); produced by the render script |
+| `scripts/` | Render script, Docker push helper, SQL init/truncate helpers, nginx config for local compose |
+| `docker-compose.yml` | Optional local stack (MySQL, Kafka, all services, mock recommendation API) |
+| `DEPLOY_A3_EKS.md` | EKS deploy: env, build/push images, apply manifests, verify |
+| `CF-A3-cmu.yml` | Optional course CloudFormation for VPC/EKS/Aurora/Kafka/MSK |
+| `url.txt` | Four lines: web BFF base URL, mobile BFF base URL, Andrew ID, CRM sender email (`SMTP_SENDER_EMAIL`) |
 
-Do **not** duplicate manifests at the repo root; use **`k8s/`** only.
+Keep manifests under `k8s/` only (no duplicate `rendered/` at repo root).
 
-## Gradescope submission
+## Architecture (A3)
 
-- **Contents:** Submit a zip or git repo with **implementation artifacts only** (source, Dockerfiles, `docker-compose.yml` if you use it, `k8s/*.yaml`, `scripts/`, `shared/`, `url.txt`). Omit caches and local junk: `node_modules`, `__pycache__/`, virtualenvs (`.venv`, `venv/`), `k8s/rendered/` (generated), `k8s/deploy.env` (secrets), `.kube/`, shell history, editor/OS cruft.
-- **Five microservices:** Each service lives in its **own** subdirectory: `book_service/`, `customer_service/`, `crm_service/`, `web_bff/`, `mobile_bff/`. The `shared/` package is not a separate microservice; `k8s/backend-router.yaml` is the cluster ingress (nginx), not a sixth Python service.
-- **Kubernetes:** Include the **template** YAML under `k8s/` (e.g. `namespace.yaml`, `*-service.yaml`, `web-bff.yaml`, `mobile-bff.yaml`, `backend-router.yaml`). Gradescope needs these alongside the code; do not submit only rendered manifests if your workflow generates `k8s/rendered/` locally.
-- **`url.txt`:** Exactly **four** lines, in order: (1) web BFF base URL, (2) mobile BFF base URL, (3) Andrew ID, (4) the **same email** the CRM service uses as the sender (`SMTP_SENDER_EMAIL`). No extra blank lines. See `DEPLOY_A3_EKS.md` §8 for how to read the two LoadBalancer URLs from the cluster.
+- **Web** and **mobile** BFFs expose HTTP (in EKS, typically via `LoadBalancer` Services). They validate **JWT** then **`X-Client-Type`** (`shared/bff_auth.py`).
+- **Backend traffic** from BFFs goes to **`backend-router`** (nginx in the cluster), which routes `/customers*` and `/books*` to the customer and book services on port 3000. Set `URL_BASE_BACKEND_SERVICES` to `http://backend-router:3000` in the cluster.
+- **Customer service** publishes customer events to **Kafka**; **CRM service** consumes them and sends email (SMTP env vars in manifests / `deploy.env`).
+- **Book service** implements related-books with an external recommendation API, timeout, and circuit breaker (see `book_service/app.py` and env vars in `k8s/book-service.yaml`).
 
-## Architecture
+## JWT validation (BFFs)
 
-| Service              | Port | EC2 Instances        |
-|----------------------|------|----------------------|
-| Web BFF              | 80   | EC2BookstoreA, B     |
-| Mobile BFF           | 80   | EC2BookstoreC, D     |
-| Customer service     | 3000 | EC2BookstoreA, D     |
-| Book service         | 3000 | EC2BookstoreB, C     |
+- Header: `Authorization: Bearer <token>`.
+- Payload: `sub` ∈ {starlord, gamora, drax, rocket, groot}, `iss` = `cmu.edu`, `exp` in the future.
 
-- **External ALB** routes by `X-Client-Type`: `Web` → Web BFF, `iOS`/`Android` → Mobile BFF. Missing header → **400** (ALB default — request never reaches your BFF).
-- **BFFs** check **JWT first (401)**, then **`X-Client-Type` (400)**. Use `shared/bff_auth.py` so order is guaranteed.
-- **Internal ALB** routes `/customers*` → Customer service, `/books*` → Book service on **port 3000** (not 80).
-- **`URL_BASE_BACKEND_SERVICES`** on every BFF container must be **`http://<InternalALBDNSName>:3000`**. If you point this at the **External** ALB or wrong port, you will see **400** or **502** on proxied calls.
+## Mobile BFF response transformations
 
-## JWT Validation (BFFs)
+- **Books:** In JSON bodies, replace the string `"non-fiction"` with the number `3`.
+- **Customers:** On `GET /customers/{id}` and `GET /customers?userId=…`, omit `address`, `address2`, `city`, `state`, `zipcode` from responses (not on `GET /customers` list).
 
-- Token in `Authorization: Bearer <token>`.
-- Payload must have: `sub` ∈ {starlord, gamora, drax, rocket, groot}, `iss` = "cmu.edu", `exp` in the future.
+## Web vs mobile behavior
 
-Create test tokens at [jwt.io](https://jwt.io) with HS256 and payload like:
-`{"sub":"starlord","roles":"pilot","iss":"cmu.edu","exp":<future_epoch>,"usern":"Peter Quill"}`.
-
-## Mobile BFF Response Transformations
-
-- **Books**: In response body, replace the word `"non-fiction"` with the number `3`.
-- **Customers**: Remove `address`, `address2`, `city`, `state`, `zipcode` from JSON responses.
-
-### A2 assignment wording (from the course PDF)
-
-- **Routing (ALB):** `X-Client-Type: Web` → Web BFF; `iOS` / `Android` → Mobile BFF; missing header → **400**.
-- **JWT:** `Authorization: Bearer …`; validate `sub`, `exp`, `iss` per assignment; else **401**.
-- **Mobile BFF only — books:** Replace **`"non-fiction"` → `3`** in JSON for mobile clients. The **book service** emits **`genre`: `3`** for non-fiction on **all** book JSON (including **GET `/books`**); **BFFs** still normalize edge cases. The **Web BFF** maps **`3` → `'non-fiction'`** when **`X-Client-Type: Web`**.
-- **Mobile BFF only — customers:** On **`GET /customers/{id}`** and **`GET /customers?userId=…`**, strip address fields (not on **`GET /customers`** list).
-
-## Autograder / LLM summary
-
-- **Summary length tradeoff:** Book service **defaults `BOOK_SUMMARY_MIN_WORDS=500`** so stored summaries meet **“acceptable length”** (test **32**). If **Books E2E** fails with a huge `summary` diff vs the reference, try **`BOOK_SUMMARY_MIN_WORDS=0`** on the **book** container (may **fail** test 32). Keep **`ENABLE_LLM_SUMMARY` unset** unless you intend to call a real LLM.
-- Book **summaries** must be **deterministic** for E2E tests that compare JSON. The book service **does not** call an external LLM unless you set **`ENABLE_LLM_SUMMARY=1`** (and `LLM_API_URL` + API key). Otherwise a fixed fallback summary is used.
-- **Mobile BFF** must be redeployed after code changes so **`genre`: `non-fiction` → `3`** applies on **single-book GETs**, **POST /books**, and **PUT /books/...** (not on **GET /books** list).
-- **If the “LLM Summary” test fails with `422 != 201`:** that is **not** an LLM bug — **`422` means duplicate ISBN** (`POST /books` rejected because that ISBN is already in `books`). Run **`scripts/truncate_for_gradescope.sql`** on the Aurora **writer** (or at least **`truncate_books.sql`**), then resubmit. Do **not** run **`seed_sample_books.sql`** on the DB you use for Gradescope.
+- **`X-Client-Type`:** `Web` → web BFF; `iOS` / `Android` → mobile BFF; missing or invalid → **400** (after JWT passes).
+- **Books:** Web BFF may map `genre` `3` → `'non-fiction'` for web clients; mobile keeps `3` where applicable.
+- Services use `strict_slashes = False` so paths with or without trailing slashes behave consistently.
 
 ## Prerequisites
 
-- Docker
-- AWS CLI (for deployment)
-- After CloudFormation stack: Internal ALB DNS, DB cluster endpoint, DB credentials
+- Docker (build images)
+- `kubectl` and AWS CLI (EKS)
+- Aurora writer endpoint and credentials after stack/deploy; Kafka brokers reachable from the cluster for customer → CRM flow
 
-## Database Setup
+## Database
 
-1. Get the Aurora writer endpoint from CloudFormation Outputs (`DBClusterEndpoint`).
-2. From a machine that can reach the VPC (e.g. EC2 in the same VPC), run:
+1. From CloudFormation (or your infra), get the **Aurora writer** hostname and DB user/password.
+2. From a host that can reach the writer:
+
    ```bash
    mysql -h <DBClusterEndpoint> -u <DBUsername> -p < scripts/init_db.sql
    ```
-   Use the `DBUsername` and `DBPassword` from stack parameters.
 
-## Build Images
+   Separate logical DBs (`books_db`, `customers_db`) match service configuration in Kubernetes and compose.
 
-From the repo root (assign_2_aws):
+## Build images
+
+From the **repository root** (BFF builds need `shared/`):
 
 ```bash
-docker build -t bookstore/customer-service ./customer_service
-docker build -t bookstore/book-service ./book_service
-docker build -f web_bff/Dockerfile -t bookstore/web-bff .
-docker build -f mobile_bff/Dockerfile -t bookstore/mobile-bff .
+docker build -t <registry>/book-service ./book_service
+docker build -t <registry>/customer-service ./customer_service
+docker build -t <registry>/crm-service ./crm_service
+docker build -f web_bff/Dockerfile -t <registry>/web-bff .
+docker build -f mobile_bff/Dockerfile -t <registry>/mobile-bff .
 ```
-(BFF images must be built from repo root so `shared/` is in context.)
 
-## Run Locally (single host)
+Push to your registry and set image names in `k8s/deploy.env` before rendering (see `DEPLOY_A3_EKS.md`).
 
-1. Start MySQL, create DB and tables (see `scripts/init_db.sql`).
-2. Start backend services:
-   ```bash
-   docker run -p 3001:3000 -e DB_HOST=host.docker.internal -e DB_USER=root -e DB_PASSWORD=xxx -e DB_NAME=bookstore bookstore/customer-service
-   docker run -p 3002:3000 -e DB_HOST=host.docker.internal -e DB_USER=root -e DB_PASSWORD=xxx -e DB_NAME=bookstore bookstore/book-service
-   ```
-3. Start BFFs (point to backend):
-   ```bash
-   docker run -p 8080:80 -e URL_BASE_BACKEND_SERVICES=http://host.docker.internal:3001 bookstore/web-bff
-   docker run -p 8081:80 -e URL_BASE_BACKEND_SERVICES=http://host.docker.internal:3002 bookstore/mobile-bff
-   ```
-   For a single backend that serves both books and customers, use one URL with port 3000 and run both backends on different ports mapped to 3000 on one host, or use a local reverse proxy.
+## Local run (Docker Compose)
 
-## Deploy on AWS (per EC2)
+```bash
+docker compose up -d
+```
 
-After the CloudFormation stack is created:
+- Web BFF: `http://localhost:8080` — use `X-Client-Type: Web` and `Authorization: Bearer <jwt>`.
+- Mobile BFF: `http://localhost:8081` — use `X-Client-Type: iOS` or `Android` and JWT.
 
-1. Get from **Outputs**: `InternalALBDNSName`, `DBClusterEndpoint`. Use stack **Parameters**: `DBUsername`, `DBPassword`.
-2. **EC2BookstoreA** (Web BFF + Customer service):
-   ```bash
-   docker run -d -p 80:80 -e URL_BASE_BACKEND_SERVICES=http://<InternalALBDNSName>:3000 bookstore/web-bff
-   docker run -d -p 3000:3000 -e DB_HOST=<DBClusterEndpoint> -e DB_USER=<DBUsername> -e DB_PASSWORD=<DBPassword> -e DB_NAME=bookstore bookstore/customer-service
-   ```
-3. **EC2BookstoreB** (Web BFF + Book service):
-   ```bash
-   docker run -d -p 80:80 -e URL_BASE_BACKEND_SERVICES=http://<InternalALBDNSName>:3000 bookstore/web-bff
-   docker run -d -p 3000:3000 -e DB_HOST=<DBClusterEndpoint> -e DB_USER=<DBUsername> -e DB_PASSWORD=<DBPassword> -e DB_NAME=bookstore bookstore/book-service
-   ```
-4. **EC2BookstoreC** (Mobile BFF + Book service):
-   ```bash
-   docker run -d -p 80:80 -e URL_BASE_BACKEND_SERVICES=http://<InternalALBDNSName>:3000 bookstore/mobile-bff
-   docker run -d -p 3000:3000 -e DB_HOST=<DBClusterEndpoint> -e DB_USER=<DBUsername> -e DB_PASSWORD=<DBPassword> -e DB_NAME=bookstore bookstore/book-service
-   ```
-5. **EC2BookstoreD** (Mobile BFF + Customer service):
-   ```bash
-   docker run -d -p 80:80 -e URL_BASE_BACKEND_SERVICES=http://<InternalALBDNSName>:3000 bookstore/mobile-bff
-   docker run -d -p 3000:3000 -e DB_HOST=<DBClusterEndpoint> -e DB_USER=<DBUsername> -e DB_PASSWORD=<DBPassword> -e DB_NAME=bookstore bookstore/customer-service
-   ```
+Details and env tuning are in `docker-compose.yml` comments.
 
-Replace `<InternalALBDNSName>`, `<DBClusterEndpoint>`, `<DBUsername>`, `<DBPassword>` with actual values. Ensure images are available on each EC2 (push to ECR and pull, or build on each instance).
+## Deploy on EKS
 
-## API Summary
+Follow **`DEPLOY_A3_EKS.md`**: fill `k8s/deploy.env` from `k8s/deploy.env.example`, run `./scripts/render_k8s_from_env.sh`, `kubectl apply` the rendered manifests (or apply templates if you substitute values another way).
 
-- `GET /status` – health check (all services); no JWT on BFFs for ALB.
-- **Customer service**: `GET /customers`, `GET /customers?userId=...`, `GET /customers/<id>`, `POST /customers`.
-- **Book service**: `GET /books`, `GET|PUT /books/<isbn>`, `GET|PUT /books/isbn/<isbn>`, `POST /books` (PUT may omit `ISBN` in JSON when it matches the URL).
-- **BFFs** expose the same paths; call with `X-Client-Type: Web` or `iOS`/`Android` and `Authorization: Bearer <JWT>`.
+## API summary
 
-## Project Layout
+- `GET /status` — health (all services); BFFs typically allow this without JWT for probes.
+- **Customer service:** `GET /customers`, `GET /customers?userId=…`, `GET /customers/<id>`, `POST /customers` (Kafka side effects for CRM).
+- **Book service:** `GET /books`, `GET|PUT /books/<isbn>`, `GET|PUT /books/isbn/<isbn>`, `POST /books`, `GET /books/<isbn>/related-books`.
+- **BFFs** proxy the same paths; send `X-Client-Type` and `Authorization` on protected routes.
+
+## Project layout
 
 ```
-assign_2_aws/
-├── .env.example            # Env var template (copy to .env; .env is gitignored)
-├── .gitignore
-├── CF-A2-cmu.yml           # CloudFormation template
-├── customer_service/       # Customer microservice (port 3000)
-├── book_service/           # Book microservice (port 3000)
-├── web_bff/                # Web BFF (port 80)
-├── mobile_bff/             # Mobile BFF (port 80)
-├── shared/                 # `jwt_utils`, `bff_auth` (used by BFFs)
+assign_3_aws/
+├── book_service/
+├── customer_service/
+├── crm_service/
+├── web_bff/
+├── mobile_bff/
+├── shared/
+├── k8s/
+│   ├── *.yaml
+│   ├── deploy.env.example
+│   └── rendered/          # generated; gitignored
 ├── scripts/
-│   ├── init_db.sql         # DB schema (books table empty for Gradescope)
-│   ├── seed_sample_books.sql  # Optional local sample rows
-│   ├── truncate_for_gradescope.sql  # TRUNCATE books + customers before resubmit
-│   ├── truncate_books.sql / truncate_customers.sql
-│   └── nginx-backend.conf  # Local backend router config
-├── docker-compose.yml      # Local run (all services)
-├── deploy.md               # Step-by-step build & AWS deploy
+├── docker-compose.yml
+├── CF-A3-cmu.yml
+├── DEPLOY_A3_EKS.md
+├── deploy.md                # legacy A2 EC2-oriented notes
+├── url.txt
 └── README.md
 ```
 
-## Gradescope / autograder still failing?
-
-**Pattern:** Tests that only need the BFF (**JWT**, **headers**, **`GET /status`**) pass, but **book/customer** tests fail → the problem is almost always **after** the BFF: **Internal ALB :3000**, **security groups**, **Aurora connectivity**, or **DB schema** — not JWT code.
-
-**Docker env on book/customer EC2s:** Services read **`DB_HOST`** (or **`DB_ENDPOINT`** as an alias). If you only export `DB_ENDPOINT` on your laptop for `mysql` but pass **no** `DB_HOST` into `docker run`, the container defaults to **`localhost`** → every DB call fails (**500**). Run: `docker exec book-svc printenv DB_HOST` (and `DB_ENDPOINT`) — one of them must be your **RDS cluster endpoint**.
-
-1. **`url.txt`** must be the **External ALB** URL (with port if required), e.g. `http://your-external-alb.us-east-1.elb.amazonaws.com` — the grader calls this. It is **not** the Internal ALB.
-2. **External ALB returns 400** if `X-Client-Type` is missing (AWS default). Your BFF code cannot change that; the grader must send `Web` / `iOS` / `Android` on API calls. If a test expects **401** for bad JWT, it must still reach the BFF (usually with a valid `X-Client-Type`).
-3. On **each** EC2 running a BFF: `URL_BASE_BACKEND_SERVICES=http://<InternalALBDNSName>:3000` (**port 3000**, not 80). Wrong host/port → **502** or **400** on proxied calls.
-4. After any code change: rebuild **all four** images for **`linux/amd64`**, push, **`docker pull` + restart** on **all four** EC2 instances. Mismatched versions (old BFF, new book service) cause confusing failures.
-5. Run **`scripts/init_db.sql`** on the Aurora **writer** so schema matches the services (`books` / `customers` tables with full columns). **`init_db.sql` leaves `books` empty** so Gradescope `POST /books` does not hit **422** (duplicate ISBN) from seed rows. For local sample data only, run **`scripts/seed_sample_books.sql`**.  
-   **If `POST /customers` returns `422`** (“This user ID already exists”), the **`userId` email is already in RDS** (from an earlier run or manual test). Run **`scripts/truncate_customers.sql`** or clear both tables with **`scripts/truncate_for_gradescope.sql`** on the writer, then resubmit. Same idea as books: **`422` on POST means duplicate key in the DB**, not a JWT/BFF bug.
-6. **Mobile BFF (A2):** `non-fiction` → `3` on **GET** single-book paths **`/books/{ISBN}`** / **`/books/isbn/{ISBN}`**, and on **POST `/books`** / **PUT** book responses — **not** on **GET `/books`** (list). Strip address fields only on **GET `/customers/{id}`** and **GET `/customers?userId=`**, **not** on **GET `/customers`**. **Location:** BFFs rewrite relative `Location` to **`http(s)://<Host>...`** via `Host` + `X-Forwarded-Proto` for autograders.
-7. **Trailing slashes:** Services use `strict_slashes = False` so `POST /books/` does not 308-redirect and drop the JSON body (some graders use trailing slashes).
-8. On an EC2 running a **BFF**, check the proxy target:  
-   `docker exec web-bff printenv URL_BASE_BACKEND_SERVICES` → must be `http://<Internal-ALB-DNS>:3000`.  
-   Then from that EC2: `curl -sS -o /dev/null -w "%{http_code}\n" "http://127.0.0.1:80/status"` and  
-   `curl -sS -o /dev/null -w "%{http_code}\n" -H "X-Client-Type: Web" -H "Authorization: Bearer <jwt>" "http://127.0.0.1:80/books"` → expect **200** (not **502**). **502** = BFF cannot reach Internal ALB or backends.
-
-9. From a machine that can reach your External ALB, smoke-test (replace URL, token, ISBN):
-
-   ```bash
-   curl -sS -o /dev/null -w "%{http_code}" "http://YOUR-EXTERNAL-ALB/status"
-   curl -sS -o /dev/null -w "%{http_code}" -H "X-Client-Type: Web" -H "Authorization: Bearer YOUR_JWT" "http://YOUR-EXTERNAL-ALB/books"
-   ```
-
 ## Production readiness
 
-- **Secrets**: Never commit `.env` or real credentials. Use `.env.example` as a template. In AWS, pass `DB_PASSWORD` and similar via `docker run -e`, ECS task definitions, or AWS Secrets Manager / SSM Parameter Store. If you previously committed a `.env` file, run `git rm --cached <path>/.env` and rotate any exposed keys.
-- **.gitignore**: Covers `.env`, `*.pem`, Python cache, IDE files, logs, and local overrides. Commit only code and `.env.example`.
-- **Dependencies**: `requirements.txt` uses pinned ranges (e.g. `flask>=2.0,<4`) for reproducible builds.
-- **HTTPS**: For production, attach an ACM certificate to the External ALB and add an HTTPS listener (port 443) in the CloudFormation template.
-- **Health checks**: All services expose `GET /status` (200) for ALB health checks; ensure target groups use this path.
-- **Deployment**: See **deploy.md** for the full build-and-deploy sequence.
+- Do not commit `k8s/deploy.env`, `.env` files with secrets, or `*.pem`. Use `*.example` files as templates; inject secrets via Kubernetes Secrets or your CI/CD.
+- Pin or range-pin dependencies in each `requirements.txt` for reproducible builds.
+- For TLS in front of BFFs, terminate HTTPS on the load balancer and set probes to `GET /status` as in the manifests.
